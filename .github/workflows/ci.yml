@@ -14,6 +14,12 @@ jobs:
     name: cargo check / test / clippy
     runs-on: self-hosted
     steps:
+      - name: Attach retained self-hosted checkout commit
+        run: |
+          if git -C "$GITHUB_WORKSPACE" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            git -C "$GITHUB_WORKSPACE" branch --force clavenar-runner-retained HEAD
+          fi
+
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
       - name: Prepare isolated Rust toolchain state
@@ -63,6 +69,12 @@ jobs:
     name: smoke-e2e (boot + verdicts + audit)
     runs-on: self-hosted
     steps:
+      - name: Attach retained self-hosted checkout commit
+        run: |
+          if git -C "$GITHUB_WORKSPACE" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            git -C "$GITHUB_WORKSPACE" branch --force clavenar-runner-retained HEAD
+          fi
+
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
       # Tag the locally-built image under the same coordinates the
@@ -92,6 +104,12 @@ jobs:
       CARGO_HOME: ${{ github.workspace }}/.ci/cargo-home-${{ github.run_id }}-${{ github.run_attempt }}-supply-chain
       RUSTUP_HOME: ${{ github.workspace }}/.ci/rustup-home-${{ github.run_id }}-${{ github.run_attempt }}-supply-chain
     steps:
+      - name: Attach retained self-hosted checkout commit
+        run: |
+          if git -C "$GITHUB_WORKSPACE" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            git -C "$GITHUB_WORKSPACE" branch --force clavenar-runner-retained HEAD
+          fi
+
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
       - name: Prepare isolated Rust setup home
