@@ -19,20 +19,20 @@ chain-version dispatch — plus a tier/mode flowchart, live in
 
 ## Run it in 60 seconds
 
-The `0.13.0` candidate is available on the development channel first. Its
-native installer selects the correct static binary for x86_64 or aarch64,
-verifies the immutable checksum, creates a dedicated service account, and
-starts a loopback-only systemd service:
+The protected `0.13.0` release includes a native installer that selects the
+correct static binary for x86_64 or aarch64, verifies the immutable checksum,
+creates a dedicated service account, and starts a loopback-only systemd
+service:
 
 ```bash
-curl -fsSL https://dev.clavenar.ai/lite/install.sh | sudo sh
+curl -fsSL https://github.com/clavenar/clavenar-lite/releases/download/v0.13.0/install.sh | sudo sh
 curl http://127.0.0.1:8088/health
 ```
 
 To select the upstream during the first install:
 
 ```bash
-curl -fsSL https://dev.clavenar.ai/lite/install.sh | \
+curl -fsSL https://github.com/clavenar/clavenar-lite/releases/download/v0.13.0/install.sh | \
   sudo sh -s -- --upstream https://mcp.your-company.com/rpc
 ```
 
@@ -40,14 +40,13 @@ Configuration lives at `/etc/clavenar-lite/config.env`; the ledger lives at
 `/var/lib/clavenar-lite/clavenar-lite.db`. Rerun the same installer to upgrade
 atomically without replacing either path.
 
-The protected public release remains `0.12.2` until this candidate is promoted.
-Its container path is:
+The protected container path is:
 
 ```bash
 docker run -p 8088:8088 \
   -e CLAVENAR_LITE_UPSTREAM_URL=https://mcp.your-company.com/rpc \
   -e CLAVENAR_LITE_MODE=observe \
-  ghcr.io/clavenar/clavenar-lite:0.12.2
+  ghcr.io/clavenar/clavenar-lite:0.13.0
 ```
 
 The image is multi-arch (`linux/amd64` + `linux/arm64`) and published only
@@ -71,21 +70,25 @@ The Fly template intentionally refuses startup until those values replace its
 placeholder. The upstream must speak MCP JSON-RPC 2.0; an OpenAI
 chat-completions endpoint is not wire-compatible.
 
-The current public `0.12.2` binary receipt remains available for external
-release verification:
+The matching binary and checksum can be verified independently. Replace
+`x86_64` with `aarch64` on an ARM64 host:
 
 ```bash
-curl -fsSLO https://github.com/clavenar/clavenar-lite/releases/download/v0.12.2/clavenar-lite-0.12.2-x86_64-linux-musl.tar.gz
-curl -fsSLO https://github.com/clavenar/clavenar-lite/releases/download/v0.12.2/clavenar-lite-0.12.2-x86_64-linux-musl.tar.gz.sha256
-sha256sum -c clavenar-lite-0.12.2-x86_64-linux-musl.tar.gz.sha256
-tar -xzf clavenar-lite-0.12.2-x86_64-linux-musl.tar.gz
+curl -fsSLO https://github.com/clavenar/clavenar-lite/releases/download/v0.13.0/clavenar-lite-0.13.0-x86_64-linux-musl.tar.gz
+curl -fsSLO https://github.com/clavenar/clavenar-lite/releases/download/v0.13.0/clavenar-lite-0.13.0-x86_64-linux-musl.tar.gz.sha256
+sha256sum -c clavenar-lite-0.13.0-x86_64-linux-musl.tar.gz.sha256
+tar -xzf clavenar-lite-0.13.0-x86_64-linux-musl.tar.gz
 ./clavenar-lite --help
 ```
 
-That older archive requires a separate policy directory when starting. The
-`0.13.0` development candidate removes that defect by compiling the baseline
-policy into both Linux musl binaries. Neither architecture needs glibc,
-OpenSSL, OPA, or a system SQLite library.
+The same release also contains
+`clavenar-lite-0.13.0-aarch64-linux-musl.tar.gz`,
+`clavenar-lite-0.13.0-aarch64-linux-musl.tar.gz.sha256`, `install.sh`,
+`install.sh.sha256`, `uninstall.sh`, and `uninstall.sh.sha256`. The protected
+publication gate downloads and verifies the complete asset set.
+
+The baseline policy is compiled into both Linux musl binaries. Neither
+architecture needs glibc, OpenSSL, OPA, or a system SQLite library.
 
 ### Native service lifecycle
 
@@ -93,8 +96,8 @@ The installer is idempotent. It preserves configuration and the ledger while
 replacing only the verified executable, license files, and systemd unit:
 
 ```bash
-# Upgrade to the current development candidate
-curl -fsSL https://dev.clavenar.ai/lite/install.sh | sudo sh
+# Upgrade to the current protected release
+curl -fsSL https://github.com/clavenar/clavenar-lite/releases/download/v0.13.0/install.sh | sudo sh
 
 # Inspect or change configuration, then restart
 sudoedit /etc/clavenar-lite/config.env
@@ -102,10 +105,10 @@ sudo systemctl restart clavenar-lite
 sudo systemctl status clavenar-lite
 
 # Remove the service and binary; preserve config + ledger
-curl -fsSL https://dev.clavenar.ai/lite/uninstall.sh | sudo sh
+curl -fsSL https://github.com/clavenar/clavenar-lite/releases/download/v0.13.0/uninstall.sh | sudo sh
 
 # Explicitly remove config, ledger, and the service account too
-curl -fsSL https://dev.clavenar.ai/lite/uninstall.sh | sudo sh -s -- --purge
+curl -fsSL https://github.com/clavenar/clavenar-lite/releases/download/v0.13.0/uninstall.sh | sudo sh -s -- --purge
 ```
 
 Native installation deliberately listens on `127.0.0.1` by default. Keep it

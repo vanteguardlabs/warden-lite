@@ -137,9 +137,16 @@ jobs:
               sha256sum "$asset" > "$asset.sha256"
             )
           done
+          install -m 0755 scripts/install.sh release-assets/install.sh
+          install -m 0755 scripts/uninstall.sh release-assets/uninstall.sh
+          (
+            cd release-assets
+            sha256sum install.sh > install.sh.sha256
+            sha256sum uninstall.sh > uninstall.sh.sha256
+          )
 
       - name: Verify native install, upgrade, and uninstall lifecycle
-        run: scripts/smoke-native-install.sh "${{ steps.ver.outputs.version }}" release-assets
+        run: scripts/smoke-native-install.sh "${{ steps.ver.outputs.version }}" release-assets release-assets
 
       - name: Create GitHub release
         env:

@@ -16,6 +16,8 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Ship checksum-verified native installation, idempotent upgrade, systemd
   service, and data-preserving uninstall paths for Linux hosts.
 - Publish static Linux binaries for both x86_64 and aarch64.
+- Publish the native installer and uninstaller with checksum sidecars alongside
+  both binary archives.
 
 ### Security
 
