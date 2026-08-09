@@ -25,7 +25,7 @@ use clavenar_lite::upstream_adapter::UpstreamAdapter;
 use ed25519_dalek::SigningKey;
 use ed25519_dalek::pkcs8::DecodePrivateKey;
 use std::io::IsTerminal;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -54,6 +54,11 @@ struct Cli {
 enum Command {
     /// Run the clavenar-lite proxy server.
     Start {
+        /// HTTP listen address. Default `0.0.0.0`; native service installs
+        /// select `127.0.0.1`. Env `CLAVENAR_LITE_BIND`.
+        #[arg(long, env = "CLAVENAR_LITE_BIND")]
+        bind: Option<IpAddr>,
+
         /// HTTP listen port. Default 8088 (env `CLAVENAR_LITE_PORT`).
         #[arg(long, env = "CLAVENAR_LITE_PORT")]
         port: Option<u16>,
@@ -83,8 +88,9 @@ enum Command {
         )]
         upstream_adapter: Option<UpstreamAdapter>,
 
-        /// Directory containing `*.rego` policy files. Default `./policies`
-        /// (env `CLAVENAR_LITE_POLICY_DIR`).
+        /// Directory containing replacement `*.rego` policy files. When
+        /// omitted, the executable uses its embedded governance baseline.
+        /// Env `CLAVENAR_LITE_POLICY_DIR`.
         #[arg(long, env = "CLAVENAR_LITE_POLICY_DIR")]
         policies: Option<PathBuf>,
 
@@ -427,6 +433,7 @@ async fn main() {
     let cli = Cli::parse();
     let exit_code = match cli.command {
         Command::Start {
+            bind,
             port,
             upstream,
             deployment_profile,
@@ -448,11 +455,11 @@ async fn main() {
             rate_limit_burst,
             verbose_verdicts,
         } => {
+            let bind = bind.unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
             let port = port.unwrap_or(8088);
             let upstream = upstream.unwrap_or_else(|| "http://localhost:9000/mcp".into());
             let deployment_profile = deployment_profile.unwrap_or_default();
             let upstream_adapter = upstream_adapter.unwrap_or_default();
-            let policies = policies.unwrap_or_else(|| PathBuf::from("./policies"));
             let ledger_path = ledger.unwrap_or_else(|| "./clavenar-lite.db".into());
             let velocity_window = velocity_window.unwrap_or(60);
             let upstream_timeout = Duration::from_secs(upstream_timeout_secs.unwrap_or(120));
@@ -466,6 +473,7 @@ async fn main() {
                     .unwrap_or(false);
 
             run_start(StartConfig {
+                bind,
                 port,
                 upstream,
                 deployment_profile,
@@ -756,11 +764,12 @@ fn open_ledger(path: &str) -> Result<Ledger, i32> {
 /// `run_start` stays under clippy's argument-count threshold and so
 /// future flags can be added without thrashing call sites.
 struct StartConfig {
+    bind: IpAddr,
     port: u16,
     upstream: String,
     deployment_profile: DeploymentProfile,
     upstream_adapter: UpstreamAdapter,
-    policies: PathBuf,
+    policies: Option<PathBuf>,
     ledger_path: String,
     velocity_window: u64,
     token: Option<String>,
@@ -826,7 +835,11 @@ async fn run_start(cfg: StartConfig) -> i32 {
         return 1;
     }
 
-    let policy = match PolicyEngine::from_dir(&cfg.policies, cfg.velocity_window) {
+    let policy_result = match cfg.policies.as_deref() {
+        Some(directory) => PolicyEngine::from_dir(directory, cfg.velocity_window),
+        None => PolicyEngine::from_embedded(cfg.velocity_window),
+    };
+    let policy = match policy_result {
         Ok(p) => Arc::new(p),
         Err(e) => {
             eprintln!("error: failed to load policies: {}", e);
@@ -1033,7 +1046,12 @@ async fn run_start(cfg: StartConfig) -> i32 {
             async move { prom.render() }
         }),
     );
-    let addr = SocketAddr::from(([0, 0, 0, 0], cfg.port));
+    let addr = SocketAddr::new(cfg.bind, cfg.port);
+    let policy_source = cfg
+        .policies
+        .as_deref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "embedded:governance.rego".to_string());
 
     tracing::info!(
         "clavenar-lite listening on http://{} (profile={:?}, mode={}, upstream={}, adapter={}, policies={}, ledger={}, auth={}, decide_auth={}, slack_alerts={}, verdict_webhook={}, upstream_timeout={}s)",
@@ -1045,7 +1063,7 @@ async fn run_start(cfg: StartConfig) -> i32 {
         },
         cfg.upstream,
         cfg.upstream_adapter,
-        cfg.policies.display(),
+        policy_source,
         cfg.ledger_path,
         if cfg.agents.is_some() {
             "agent-registry"

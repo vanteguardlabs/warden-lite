@@ -1,8 +1,9 @@
 //! Embedded Rego policy engine (Layer 3, OSS edition).
 //!
-//! Thin wrapper around `regorus::Engine` that loads every `*.rego` file
-//! under a configured policy directory at startup, and evaluates each
-//! request against `data.clavenar.authz.{allow,deny,review}`. Same wire
+//! Thin wrapper around `regorus::Engine` that loads the embedded baseline or
+//! every `*.rego` file under an explicitly configured policy directory at
+//! startup, and evaluates each request against
+//! `data.clavenar.authz.{allow,deny,review}`. Same wire
 //! shape as the full edition's `clavenar_policy_engine::PolicyDecision`,
 //! so a custom `governance.rego` written for the full edition runs
 //! verbatim under Lite (and vice versa).
@@ -21,6 +22,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex as BlockingMutex};
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
+
+const EMBEDDED_POLICY_NAME: &str = "embedded:governance.rego";
+const EMBEDDED_POLICY: &str = include_str!("../policies/governance.rego");
 
 /// Input to a policy evaluation. Field-for-field compatible with the full
 /// edition's `clavenar_policy_engine::PolicyInput` so a `governance.rego`
@@ -114,6 +118,21 @@ pub struct PolicyEngine {
 }
 
 impl PolicyEngine {
+    /// Load the baseline governance policy compiled into the executable.
+    /// This is the dependency-free default used when no policy directory is
+    /// selected explicitly.
+    pub fn from_embedded(velocity_window_secs: u64) -> anyhow::Result<Self> {
+        let mut engine = Engine::new();
+        engine
+            .add_policy(
+                EMBEDDED_POLICY_NAME.to_string(),
+                EMBEDDED_POLICY.to_string(),
+            )
+            .map_err(|e| anyhow::anyhow!("add_policy {EMBEDDED_POLICY_NAME}: {e}"))?;
+        tracing::info!("loaded embedded governance policy");
+        Ok(Self::new(engine, velocity_window_secs))
+    }
+
     /// Load every `*.rego` file under `policy_dir` into a fresh regorus
     /// engine. Errors out if no policies are found — failing closed at
     /// startup is better than silently allowing every request because
@@ -147,14 +166,18 @@ impl PolicyEngine {
             policy_dir.display()
         );
 
-        Ok(Self {
+        Ok(Self::new(engine, velocity_window_secs))
+    }
+
+    fn new(engine: Engine, velocity_window_secs: u64) -> Self {
+        Self {
             engine: Arc::new(BlockingMutex::new(engine)),
             // Regorus mutates its input between evaluations, so one engine is
             // intentionally single-flight. The semaphore prevents a burst of
             // requests from occupying Tokio's blocking pool while they wait.
             evaluation_permit: Arc::new(Semaphore::new(1)),
             tracker: Arc::new(VelocityTracker::new(velocity_window_secs)),
-        })
+        }
     }
 
     /// Evaluate a single decision. Internally records the request in the
@@ -277,6 +300,25 @@ mod tests {
         let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         p.push("policies");
         p
+    }
+
+    #[tokio::test]
+    async fn embedded_baseline_is_available_without_filesystem_policy_assets() {
+        let engine = PolicyEngine::from_embedded(60).unwrap();
+        let decision = engine
+            .evaluate(PolicyInput {
+                tool_type: "sql_execute".into(),
+                agent_history: AgentHistory::default(),
+                intent_score: 0.05,
+                current_time: Some("2026-05-02T12:00:00Z".into()),
+                agent_id: Some("embedded-test".into()),
+                method: Some("call_tool".into()),
+                recent_request_count: 0,
+                correlation_id: None,
+            })
+            .await;
+        assert!(!decision.allow);
+        assert!(decision.reasons.iter().any(|reason| reason.contains("SQL")));
     }
 
     #[tokio::test]

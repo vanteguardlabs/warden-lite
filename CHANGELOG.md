@@ -6,6 +6,23 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-08-09
+
+### Added
+
+- Compile the baseline `governance.rego` into the executable so a fresh host
+  binary starts without a companion policy directory. An explicit
+  `--policies` directory remains a fail-closed replacement.
+- Ship checksum-verified native installation, idempotent upgrade, systemd
+  service, and data-preserving uninstall paths for Linux hosts.
+- Publish static Linux binaries for both x86_64 and aarch64.
+
+### Security
+
+- Native service installs listen on loopback by default, run as a dedicated
+  unprivileged account, persist the ledger outside the executable directory,
+  and use a hardened systemd sandbox.
+
 ## [0.12.2] - 2026-08-05
 
 ### Changed

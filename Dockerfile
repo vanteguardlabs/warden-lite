@@ -2,12 +2,12 @@
 #
 # Multi-stage build for clavenar-lite. Stage 1 produces the release
 # binary against rust:1-bookworm; stage 2 lands the binary on
-# debian:bookworm-slim with the bundled default policies and runs
+# debian:bookworm-slim and runs
 # under the standard distroless-ish nonroot UID 65532.
 #
-# Built artifact runs on port 8088 by default; mount a policy
-# directory or use the bundled governance.rego baseline. SQLite
-# The developer profile remains stateless by default. Hosted templates select
+# Built artifact runs on port 8088 by default; mount a replacement policy
+# directory or use the governance baseline embedded in the binary. The
+# developer profile remains stateless by default. Hosted templates select
 # the fail-closed hosted profile and must mount durable `/data` state.
 
 # ---------- builder ----------
@@ -23,7 +23,28 @@ COPY policies ./policies
 # Build the release binary. Docker's layer cache keeps the COPY +
 # `cargo fetch`-warmed dependency graph hot across rebuilds that only
 # change source files, so iteration is cheap after the first build.
-RUN cargo build --release --locked --bin clavenar-lite
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    cargo build --release --locked --bin clavenar-lite
+
+# ---------- static release binary ----------
+# BuildKit selects the requested target platform, so the same target exports
+# native musl binaries for both linux/amd64 and linux/arm64 without a system
+# libc dependency or a cross-linker hidden on the runner.
+FROM rust:1.97.0-alpine3.23@sha256:ca0daf101eef0c8cd1e49dfc137154a220efb8c458c85a3eacacc7dfd5d9e04c AS static-builder
+
+RUN apk add --no-cache git musl-dev
+WORKDIR /build
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+COPY contracts ./contracts
+COPY policies ./policies
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    cargo build --release --locked --bin clavenar-lite
+
+FROM scratch AS static-binary
+COPY --from=static-builder /build/target/release/clavenar-lite /clavenar-lite
 
 # ---------- runtime ----------
 FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818 AS runtime
@@ -40,11 +61,10 @@ RUN apt-get update && \
         ca-certificates \
         tini && \
     rm -rf /var/lib/apt/lists/* && \
-    mkdir -p /etc/clavenar-lite/policies /var/lib/clavenar-lite && \
+    mkdir -p /var/lib/clavenar-lite && \
     chown -R 65532:65532 /var/lib/clavenar-lite
 
 COPY --from=builder /build/target/release/clavenar-lite /usr/local/bin/clavenar-lite
-COPY --from=builder /build/policies /etc/clavenar-lite/policies
 
 USER 65532:65532
 
@@ -57,7 +77,6 @@ USER 65532:65532
 # 403-ing the first request. `fly.toml` explicitly selects the hosted profile,
 # enforce mode, bounded rates, durable state, and the MCP JSON-RPC adapter.
 ENV CLAVENAR_LITE_PORT=8088 \
-    CLAVENAR_LITE_POLICY_DIR=/etc/clavenar-lite/policies \
     CLAVENAR_LITE_LEDGER=:memory: \
     CLAVENAR_LITE_MODE=observe \
     RUST_LOG=info

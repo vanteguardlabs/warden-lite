@@ -50,6 +50,10 @@ done
 if [ -z "$VERSION" ]; then
     VERSION="$(git -C "$(dirname "$0")/.." describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)"
 fi
+NATIVE_LIFECYCLE=0
+if [ "$(printf '%s\n' 0.13.0 "$VERSION" | sort -V | head -1)" = 0.13.0 ]; then
+    NATIVE_LIFECYCLE=1
+fi
 if [ -z "$VERSION" ]; then
     echo "error: no version supplied and no git tag detected" >&2
     echo "usage: $0 [<version>] [--only binary|docker]" >&2
@@ -97,27 +101,50 @@ run_test() {
 }
 
 test_static_binary() {
-    # Match the README's `curl ... | tar -xz` snippet exactly. If the
-    # snippet drifts from real URLs, this test 404s and we know
-    # before a partner does.
+    # Prove both advertised static assets and start the host binary from an
+    # empty working directory, where no external policy file can mask a
+    # packaging regression.
     $DOCKER run --rm debian:bookworm-slim bash -c "
         set -euo pipefail
         apt-get update -qq
         apt-get install -y -qq --no-install-recommends curl ca-certificates file >/dev/null
         V='$VERSION'
-        ASSET=\"clavenar-lite-\${V}-x86_64-linux-musl.tar.gz\"
-        URL=\"https://github.com/clavenar/clavenar-lite/releases/download/v\${V}/\${ASSET}\"
-        echo \"GET \$URL\"
-        curl -fsSL \"\$URL\" -o \"\$ASSET\"
-        curl -fsSL \"\$URL.sha256\" -o \"\$ASSET.sha256\"
-        sha256sum -c \"\$ASSET.sha256\"
-        tar -xzf \"\$ASSET\"
-        file ./clavenar-lite | grep -Eq 'statically linked|static-pie linked' || {
-            echo 'binary is NOT statically linked — musl build is broken'
-            file ./clavenar-lite
-            exit 1
-        }
-        ./clavenar-lite --version
+        NATIVE_LIFECYCLE='$NATIVE_LIFECYCLE'
+        ARCHITECTURES=x86_64
+        if [ \"\$NATIVE_LIFECYCLE\" -eq 1 ]; then
+            ARCHITECTURES='x86_64 aarch64'
+        fi
+        for ARCH in \$ARCHITECTURES; do
+            ASSET=\"clavenar-lite-\${V}-\${ARCH}-linux-musl.tar.gz\"
+            URL=\"https://github.com/clavenar/clavenar-lite/releases/download/v\${V}/\${ASSET}\"
+            echo \"GET \$URL\"
+            curl -fsSL \"\$URL\" -o \"\$ASSET\"
+            curl -fsSL \"\$URL.sha256\" -o \"\$ASSET.sha256\"
+            sha256sum -c \"\$ASSET.sha256\"
+            mkdir \"\$ARCH\"
+            tar -xzf \"\$ASSET\" -C \"\$ARCH\"
+            file \"\$ARCH/clavenar-lite\" | grep -Eq 'statically linked|static-pie linked'
+        done
+        x86_64/clavenar-lite --version
+        if [ \"\$NATIVE_LIFECYCLE\" -eq 1 ]; then
+            file aarch64/clavenar-lite | grep -Eiq 'aarch64|ARM aarch64'
+            mkdir empty-working-directory
+            cd empty-working-directory
+            ../x86_64/clavenar-lite start --bind 127.0.0.1 --port 28088 \\
+                --upstream http://127.0.0.1:9/mcp --ledger :memory: --mode observe \\
+                >runtime.log 2>&1 &
+            PID=\$!
+            trap 'kill -INT \$PID >/dev/null 2>&1 || true; wait \$PID >/dev/null 2>&1 || true' EXIT
+            for _ in \$(seq 1 40); do
+                curl -fsS http://127.0.0.1:28088/health >/dev/null && break
+                sleep 0.25
+            done
+            curl -fsS http://127.0.0.1:28088/health >/dev/null
+            grep -F 'policies=embedded:governance.rego' runtime.log >/dev/null
+            kill -INT \$PID
+            wait \$PID
+            trap - EXIT
+        fi
     "
 }
 

@@ -12,18 +12,19 @@ edition 2024.
 
 ```bash
 cargo build                                # release: cargo build --release
-cargo build --release --locked --target x86_64-unknown-linux-musl   # static release artifact (needs musl-tools; CI asserts truly static via ldd)
+docker buildx build --platform linux/amd64 --target static-binary --output type=local,dest=/tmp/clavenar-lite-static .
 cargo test
 ./scripts/smoke-e2e.sh                     # CI e2e (needs docker): boots the runtime image — all three verdicts + park-poll-decide loop + concurrent audit read
+./scripts/smoke-native-install.sh VERSION ASSET_DIRECTORY  # both static architectures + native lifecycle + embedded-policy boot
 cargo clippy --all-targets -- -D warnings
 cargo deny check all                       # supply-chain gate
 cargo cyclonedx --format json --describe crate   # SBOM
 docker build -t clavenar-lite:dev .
 ```
 
-Host-build caveat: `target/` may be root-owned from prior docker builds — pass `CARGO_TARGET_DIR=/tmp/clavenar-lite-target`. Release workflow ships multi-arch amd64+arm64 on `v*` tags; tag must match `Cargo.toml` version.
+Host-build caveat: `target/` may be root-owned from prior docker builds — pass `CARGO_TARGET_DIR=/tmp/clavenar-lite-target`. The protected publication workflow ships multi-arch amd64+arm64 only when the signed request version matches `Cargo.toml` and its source SHA matches the checked-out commit.
 
-Run: single bin `clavenar-lite` (`clavenar-lite start …`); HTTP server binds `0.0.0.0:8088` (`--port` / `CLAVENAR_LITE_PORT`). Subcommands: `start`, `verify`, `audit <agent_id>`, `backup`, `restore`, `graduate {report,verify}`, `pending {list,get,decide}`. Every flag has a `CLAVENAR_LITE_*` env fallback (see README matrix). The protected distribution event must match the Cargo version and exact signed-BOM source SHA before the workflow publishes a versioned image or static binary.
+Run: single bin `clavenar-lite` (`clavenar-lite start …`); HTTP server binds `0.0.0.0:8088` (`--bind` / `CLAVENAR_LITE_BIND`, `--port` / `CLAVENAR_LITE_PORT`). Native service installs select loopback. Subcommands: `start`, `verify`, `audit <agent_id>`, `backup`, `restore`, `graduate {report,verify}`, `pending {list,get,decide}`. Every flag has a `CLAVENAR_LITE_*` env fallback (see README matrix). The protected distribution event must match the Cargo version and exact signed-BOM source SHA before the workflow publishes a versioned image or static binary.
 
 ## Layout
 - `src/main.rs` — clap CLI, subcommand dispatch, fail-fast startup checks, `TcpListener` bind, `/metrics` wiring.
@@ -48,13 +49,17 @@ Run: single bin `clavenar-lite` (`clavenar-lite start …`); HTTP server binds `
 - `src/supply_chain.rs` — pins first `tools/list`, diffs later ones → `tool_schema_poisoned` row.
 - `contracts/` — hosted safety, client migration, retry separation, rooted
   targets, outbound pinning, and server-execution schemas/fixtures.
-- `policies/governance.rego` — bundled baseline (denylist, intent threshold, business-hours, velocity, wire-transfer review). `tests/proxy_integration.rs`. `scripts/{smoke-e2e,smoke-install}.sh`. `docs/SEQUENCES.md`.
+- `policies/governance.rego` — baseline compiled into the executable (denylist, intent threshold, business-hours, velocity, wire-transfer review). `tests/proxy_integration.rs`. `scripts/{install,uninstall,smoke-e2e,smoke-install,smoke-native-install}.sh`. `docs/SEQUENCES.md`.
 - Routes (port 8088): `GET /`,`/health`,`/readyz`,`/metrics`; `POST /mcp`; `GET /pending`, `GET /pending/{id}`, `POST /pending/{id}/decide`.
 
 ## Conventions & invariants
 
 - **Formatting is an owning-CI gate.** Run `cargo fmt --all -- --check`
   before pushing Rust changes; CI runs it before check, test, and clippy.
+- **The default policy is a binary invariant.** A fresh executable must start
+  from an empty working directory using the embedded baseline. An explicit
+  policy directory remains replacement semantics and must fail closed when it
+  is missing or empty.
 
 - **Wire + chain are byte-compatible with the full edition.** A Lite-produced chain verifies under the production ledger; full-edition `governance.rego` runs verbatim here. Don't change the hash-chain serialization or the `PolicyInput` shape without matching the full edition.
 - **Decision and execution are distinct contracts.**

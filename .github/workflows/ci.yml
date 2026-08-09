@@ -47,6 +47,13 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --all-targets -- -D warnings
 
+      - name: shell scripts
+        run: |
+          shellcheck -S warning scripts/*.sh
+          cargo_version=$(sed -nE 's/^version = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' Cargo.toml | head -1)
+          installer_version=$(sed -nE 's/^VERSION=([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' scripts/install.sh)
+          test "$cargo_version" = "$installer_version"
+
   # End-to-end smoke. Builds the runtime image from the working tree
   # and runs scripts/smoke-e2e.sh against it — three verdicts, the
   # yellow-tier park-poll-decide loop, decide-token gating, and the

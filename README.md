@@ -19,10 +19,29 @@ chain-version dispatch — plus a tier/mode flowchart, live in
 
 ## Run it in 60 seconds
 
-Pick whichever surface fits how you ship today. All three boot with
-the developer profile; hosted templates use a separate fail-closed posture.
+The `0.13.0` candidate is available on the development channel first. Its
+native installer selects the correct static binary for x86_64 or aarch64,
+verifies the immutable checksum, creates a dedicated service account, and
+starts a loopback-only systemd service:
 
-**Container** (no Rust toolchain needed):
+```bash
+curl -fsSL https://dev.clavenar.ai/lite/install.sh | sudo sh
+curl http://127.0.0.1:8088/health
+```
+
+To select the upstream during the first install:
+
+```bash
+curl -fsSL https://dev.clavenar.ai/lite/install.sh | \
+  sudo sh -s -- --upstream https://mcp.your-company.com/rpc
+```
+
+Configuration lives at `/etc/clavenar-lite/config.env`; the ledger lives at
+`/var/lib/clavenar-lite/clavenar-lite.db`. Rerun the same installer to upgrade
+atomically without replacing either path.
+
+The protected public release remains `0.12.2` until this candidate is promoted.
+Its container path is:
 
 ```bash
 docker run -p 8088:8088 \
@@ -52,20 +71,46 @@ The Fly template intentionally refuses startup until those values replace its
 placeholder. The upstream must speak MCP JSON-RPC 2.0; an OpenAI
 chat-completions endpoint is not wire-compatible.
 
-**Static binary** (no Rust toolchain, no docker):
+The current public `0.12.2` binary receipt remains available for external
+release verification:
 
 ```bash
 curl -fsSLO https://github.com/clavenar/clavenar-lite/releases/download/v0.12.2/clavenar-lite-0.12.2-x86_64-linux-musl.tar.gz
 curl -fsSLO https://github.com/clavenar/clavenar-lite/releases/download/v0.12.2/clavenar-lite-0.12.2-x86_64-linux-musl.tar.gz.sha256
 sha256sum -c clavenar-lite-0.12.2-x86_64-linux-musl.tar.gz.sha256
 tar -xzf clavenar-lite-0.12.2-x86_64-linux-musl.tar.gz
-./clavenar-lite start --mode observe \
-  --upstream https://mcp.your-company.com/rpc
+./clavenar-lite --help
 ```
 
-Linux x86_64, fully static (musl) — no glibc dependency, no system
-libsqlite. The mandatory companion checksum verifies the archive before
-extraction.
+That older archive requires a separate policy directory when starting. The
+`0.13.0` development candidate removes that defect by compiling the baseline
+policy into both Linux musl binaries. Neither architecture needs glibc,
+OpenSSL, OPA, or a system SQLite library.
+
+### Native service lifecycle
+
+The installer is idempotent. It preserves configuration and the ledger while
+replacing only the verified executable, license files, and systemd unit:
+
+```bash
+# Upgrade to the current development candidate
+curl -fsSL https://dev.clavenar.ai/lite/install.sh | sudo sh
+
+# Inspect or change configuration, then restart
+sudoedit /etc/clavenar-lite/config.env
+sudo systemctl restart clavenar-lite
+sudo systemctl status clavenar-lite
+
+# Remove the service and binary; preserve config + ledger
+curl -fsSL https://dev.clavenar.ai/lite/uninstall.sh | sudo sh
+
+# Explicitly remove config, ledger, and the service account too
+curl -fsSL https://dev.clavenar.ai/lite/uninstall.sh | sudo sh -s -- --purge
+```
+
+Native installation deliberately listens on `127.0.0.1` by default. Keep it
+local, use an SSH tunnel, or put an authenticated TLS endpoint in front of it;
+do not expose the developer profile directly to the Internet.
 
 Hit it once to confirm:
 
@@ -212,7 +257,7 @@ following controls at startup; an unsafe combination exits before binding:
 ## Subcommands
 
 ```
-clavenar-lite start [--port N] [--upstream URL] [--policies DIR] [--ledger PATH]
+clavenar-lite start [--bind IP] [--port N] [--upstream URL] [--policies DIR] [--ledger PATH]
                   [--deployment-profile developer|hosted]
                   [--upstream-adapter raw-json|mcp-jsonrpc-v1]
                   [--velocity-window SECS] [--token TOKEN] [--agents SPEC]
@@ -243,11 +288,12 @@ Every flag falls back to a `CLAVENAR_LITE_*` env var:
 
 | Flag                       | Env var                              | Default                   |
 |----------------------------|--------------------------------------|---------------------------|
+| `--bind`                   | `CLAVENAR_LITE_BIND`                   | 0.0.0.0                   |
 | `--port`                   | `CLAVENAR_LITE_PORT`                   | 8088                      |
 | `--upstream`               | `CLAVENAR_LITE_UPSTREAM_URL`           | http://localhost:9000/mcp |
 | `--deployment-profile`     | `CLAVENAR_LITE_DEPLOYMENT_PROFILE`     | `developer`               |
 | `--upstream-adapter`       | `CLAVENAR_LITE_UPSTREAM_ADAPTER`       | `raw-json`                |
-| `--policies`               | `CLAVENAR_LITE_POLICY_DIR`             | ./policies                |
+| `--policies`               | `CLAVENAR_LITE_POLICY_DIR`             | embedded baseline         |
 | `--ledger`                 | `CLAVENAR_LITE_LEDGER`                 | ./clavenar-lite.db          |
 | `--velocity-window`        | `CLAVENAR_LITE_VELOCITY_WINDOW_SECS`   | 60                        |
 | `--token`                  | `CLAVENAR_LITE_TOKEN`                  | (none — open access)      |
@@ -557,13 +603,16 @@ clickable-button approval flow lives in the full edition's HIL service.
 
 ## Customising policy
 
-Drop additional `*.rego` files into `./policies/` (or wherever you
-point `--policies`). The bundled `governance.rego` covers the
+With no `--policies` flag, the baseline `governance.rego` compiled into the
+executable covers the
 canonical denylist (`sql_execute`, `shell_exec`), the intent-score
 threshold, the bulk-export business-hours rule, the velocity circuit
-breaker, and the wire-transfer review tier. Add your own rules under
-`package clavenar.authz`; they merge into the existing `allow` / `deny`
-/ `review` rule sets at evaluation time.
+breaker, and the wire-transfer review tier. An explicit `--policies DIR`
+replaces that baseline and fails startup if the directory is missing or has no
+`*.rego` files. To extend rather than replace the baseline, copy
+`policies/governance.rego` into the selected directory beside your own rules;
+rules under `package clavenar.authz` merge into the same `allow` / `deny` /
+`review` sets.
 
 The Rego input shape is the full edition's `PolicyInput`:
 

@@ -4,7 +4,8 @@ run-name: publish ${{ github.event.client_payload.publication_id }}
 # What this ships:
 #   1. Multi-arch container image (linux/amd64 + linux/arm64) at
 #      ghcr.io/clavenar/clavenar-lite:{version}.
-#   2. Static linux-x86_64 binary (musl) as a release asset, for
+#   2. Static linux-x86_64 and linux-aarch64 binaries (musl) as release assets,
+#      each with its own mandatory checksum, for
 #      partners who want the binary outside a container.
 #   3. A GitHub release with the matching CHANGELOG.md section as
 #      the release body.
@@ -58,7 +59,6 @@ jobs:
           HOME: ${{ runner.temp }}/home-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
         with:
           toolchain: 1.97.0
-          targets: x86_64-unknown-linux-musl
           components: rustfmt, clippy
 
       - name: Verify the exact Lite source before publication
@@ -107,30 +107,39 @@ jobs:
           echo "---release-notes.md---"
           cat release-notes.md
 
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          key: musl-release
-
-      - name: Install musl-tools
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-
-      - name: Build static linux-x86_64 binary
+      - name: Build static Linux release assets
         run: |
-          cargo build --release --locked --target x86_64-unknown-linux-musl
-          BIN=target/x86_64-unknown-linux-musl/release/clavenar-lite
-          file "$BIN"
-          # Sanity: assert it really is static — dynamic libc linkage
-          # defeats the entire reason we ship a musl build.
-          if ldd "$BIN" 2>&1 | grep -qE '=>'; then
-            echo "::error::binary is not statically linked"
-            ldd "$BIN" || true
-            exit 1
-          fi
           VERSION="${{ steps.ver.outputs.version }}"
-          ASSET="clavenar-lite-${VERSION}-x86_64-linux-musl.tar.gz"
-          tar -czf "$ASSET" -C "$(dirname "$BIN")" "$(basename "$BIN")"
-          sha256sum "$ASSET" | tee "${ASSET}.sha256"
-          echo "asset=$ASSET" >> "$GITHUB_ENV"
+          mkdir -p release-assets
+          for specification in amd64:x86_64 arm64:aarch64; do
+            platform="${specification%%:*}"
+            architecture="${specification##*:}"
+            output="$RUNNER_TEMP/clavenar-lite-$architecture"
+            package="$RUNNER_TEMP/package-$architecture"
+            docker buildx build \
+              --platform "linux/$platform" \
+              --target static-binary \
+              --output "type=local,dest=$output" \
+              .
+            file "$output/clavenar-lite" | tee "$RUNNER_TEMP/file-$architecture.txt"
+            grep -Eq 'statically linked|static-pie linked' \
+              "$RUNNER_TEMP/file-$architecture.txt"
+            mkdir -p "$package"
+            install -m 0755 "$output/clavenar-lite" "$package/clavenar-lite"
+            install -m 0644 LICENSE NOTICE "$package/"
+            asset="clavenar-lite-${VERSION}-${architecture}-linux-musl.tar.gz"
+            tar --sort=name --mtime='UTC 1970-01-01' \
+              --owner=0 --group=0 --numeric-owner \
+              -czf "release-assets/$asset" -C "$package" \
+              LICENSE NOTICE clavenar-lite
+            (
+              cd release-assets
+              sha256sum "$asset" > "$asset.sha256"
+            )
+          done
+
+      - name: Verify native install, upgrade, and uninstall lifecycle
+        run: scripts/smoke-native-install.sh "${{ steps.ver.outputs.version }}" release-assets
 
       - name: Create GitHub release
         env:
@@ -142,7 +151,7 @@ jobs:
           if gh release view "$tag" >/dev/null 2>&1; then
             test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" \
               --jq '.object.sha')" = "$SOURCE_SHA"
-            gh release upload "$tag" "$asset" "${asset}.sha256" --clobber
+            gh release upload "$tag" release-assets/* --clobber
           else
             existing="$(git ls-remote --refs origin "refs/tags/$tag" |
               awk '{print $1}')"
@@ -154,6 +163,5 @@ jobs:
             gh release create "$tag" --verify-tag \
               --title "$tag — clavenar-lite" \
               --notes-file release-notes.md \
-              "$asset" \
-              "${asset}.sha256"
+              release-assets/*
           fi
