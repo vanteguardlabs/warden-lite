@@ -11,7 +11,7 @@
 #
 # Usage:
 #   scripts/smoke-e2e.sh                   # use :latest (or pin via env)
-#   CLAVENAR_LITE_VERSION=0.4.0 scripts/smoke-e2e.sh
+#   CLAVENAR_LITE_VERSION=1.0.0 scripts/smoke-e2e.sh
 #
 # Requires: docker. No host-side curl/jq — everything runs inside
 # containers on a dedicated bridge network, cleaned up on exit.

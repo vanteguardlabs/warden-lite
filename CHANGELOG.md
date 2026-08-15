@@ -6,6 +6,13 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-15
+
+### Changed
+
+- Establish `1.0.0` as the stable release baseline for the existing Lite wire,
+  native-install, and protected-publication surfaces.
+
 ## [0.13.0] - 2026-08-09
 
 ### Added

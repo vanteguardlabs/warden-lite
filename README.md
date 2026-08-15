@@ -19,20 +19,20 @@ chain-version dispatch — plus a tier/mode flowchart, live in
 
 ## Run it in 60 seconds
 
-The protected `0.13.0` release includes a native installer that selects the
+The protected `1.0.0` release includes a native installer that selects the
 correct static binary for x86_64 or aarch64, verifies the immutable checksum,
 creates a dedicated service account, and starts a loopback-only systemd
 service:
 
 ```bash
-curl -fsSL https://github.com/clavenar/clavenar-lite/releases/download/v0.13.0/install.sh | sudo sh
+curl -fsSL https://github.com/clavenar/clavenar-lite/releases/download/v1.0.0/install.sh | sudo sh
 curl http://127.0.0.1:8088/health
 ```
 
 To select the upstream during the first install:
 
 ```bash
-curl -fsSL https://github.com/clavenar/clavenar-lite/releases/download/v0.13.0/install.sh | \
+curl -fsSL https://github.com/clavenar/clavenar-lite/releases/download/v1.0.0/install.sh | \
   sudo sh -s -- --upstream https://mcp.your-company.com/rpc
 ```
 
@@ -46,7 +46,7 @@ The protected container path is:
 docker run -p 8088:8088 \
   -e CLAVENAR_LITE_UPSTREAM_URL=https://mcp.your-company.com/rpc \
   -e CLAVENAR_LITE_MODE=observe \
-  ghcr.io/clavenar/clavenar-lite:0.13.0
+  ghcr.io/clavenar/clavenar-lite:1.0.0
 ```
 
 The image is multi-arch (`linux/amd64` + `linux/arm64`) and published only
@@ -74,16 +74,16 @@ The matching binary and checksum can be verified independently. Replace
 `x86_64` with `aarch64` on an ARM64 host:
 
 ```bash
-curl -fsSLO https://github.com/clavenar/clavenar-lite/releases/download/v0.13.0/clavenar-lite-0.13.0-x86_64-linux-musl.tar.gz
-curl -fsSLO https://github.com/clavenar/clavenar-lite/releases/download/v0.13.0/clavenar-lite-0.13.0-x86_64-linux-musl.tar.gz.sha256
-sha256sum -c clavenar-lite-0.13.0-x86_64-linux-musl.tar.gz.sha256
-tar -xzf clavenar-lite-0.13.0-x86_64-linux-musl.tar.gz
+curl -fsSLO https://github.com/clavenar/clavenar-lite/releases/download/v1.0.0/clavenar-lite-1.0.0-x86_64-linux-musl.tar.gz
+curl -fsSLO https://github.com/clavenar/clavenar-lite/releases/download/v1.0.0/clavenar-lite-1.0.0-x86_64-linux-musl.tar.gz.sha256
+sha256sum -c clavenar-lite-1.0.0-x86_64-linux-musl.tar.gz.sha256
+tar -xzf clavenar-lite-1.0.0-x86_64-linux-musl.tar.gz
 ./clavenar-lite --help
 ```
 
 The same release also contains
-`clavenar-lite-0.13.0-aarch64-linux-musl.tar.gz`,
-`clavenar-lite-0.13.0-aarch64-linux-musl.tar.gz.sha256`, `install.sh`,
+`clavenar-lite-1.0.0-aarch64-linux-musl.tar.gz`,
+`clavenar-lite-1.0.0-aarch64-linux-musl.tar.gz.sha256`, `install.sh`,
 `install.sh.sha256`, `uninstall.sh`, and `uninstall.sh.sha256`. The protected
 publication gate downloads and verifies the complete asset set.
 
@@ -97,7 +97,7 @@ replacing only the verified executable, license files, and systemd unit:
 
 ```bash
 # Upgrade to the current protected release
-curl -fsSL https://github.com/clavenar/clavenar-lite/releases/download/v0.13.0/install.sh | sudo sh
+curl -fsSL https://github.com/clavenar/clavenar-lite/releases/download/v1.0.0/install.sh | sudo sh
 
 # Inspect or change configuration, then restart
 sudoedit /etc/clavenar-lite/config.env
@@ -105,10 +105,10 @@ sudo systemctl restart clavenar-lite
 sudo systemctl status clavenar-lite
 
 # Remove the service and binary; preserve config + ledger
-curl -fsSL https://github.com/clavenar/clavenar-lite/releases/download/v0.13.0/uninstall.sh | sudo sh
+curl -fsSL https://github.com/clavenar/clavenar-lite/releases/download/v1.0.0/uninstall.sh | sudo sh
 
 # Explicitly remove config, ledger, and the service account too
-curl -fsSL https://github.com/clavenar/clavenar-lite/releases/download/v0.13.0/uninstall.sh | sudo sh -s -- --purge
+curl -fsSL https://github.com/clavenar/clavenar-lite/releases/download/v1.0.0/uninstall.sh | sudo sh -s -- --purge
 ```
 
 Native installation deliberately listens on `127.0.0.1` by default. Keep it
@@ -439,7 +439,7 @@ automatically — no manual SQL surgery needed.
 `clavenar.decision/v1` request is side-effect-free and returns only its
 decision; partial, unknown, or mixed selectors fail before policy, ledger, or
 upstream access. A governed SDK request is never silently reinterpreted as
-server execution. Beginning with 0.9.0, an unselected effect-capable request
+server execution. Beginning with 1.0.0, an unselected effect-capable request
 returns HTTP 426 `client_contract_required` before rate limiting, policy,
 pending state, Ledger, receipt, or upstream effects. Selector-free MCP control
 methods remain compatible. Upgrade clients first by following

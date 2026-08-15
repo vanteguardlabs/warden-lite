@@ -3,7 +3,7 @@
 set -eu
 
 PROGRAM=clavenar-lite
-VERSION=0.13.0
+VERSION=1.0.0
 DEFAULT_RELEASE_ROOT="https://github.com/clavenar/clavenar-lite/releases/download"
 RELEASE_ROOT="${CLAVENAR_LITE_RELEASE_ROOT:-$DEFAULT_RELEASE_ROOT}"
 INSTALL_ROOT=/

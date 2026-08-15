@@ -8,7 +8,7 @@
 #
 # Usage:
 #   scripts/smoke-install.sh                  # auto-detect version from latest tag
-#   scripts/smoke-install.sh 0.3.0            # pin a specific version
+#   scripts/smoke-install.sh 1.0.0            # pin a specific version
 #   scripts/smoke-install.sh --only binary    # run just one path
 #   scripts/smoke-install.sh --only docker    # run just one path
 #
@@ -51,7 +51,7 @@ if [ -z "$VERSION" ]; then
     VERSION="$(git -C "$(dirname "$0")/.." describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)"
 fi
 NATIVE_LIFECYCLE=0
-if [ "$(printf '%s\n' 0.13.0 "$VERSION" | sort -V | head -1)" = 0.13.0 ]; then
+if [ "$(printf '%s\n' 1.0.0 "$VERSION" | sort -V | head -1)" = 1.0.0 ]; then
     NATIVE_LIFECYCLE=1
 fi
 if [ -z "$VERSION" ]; then
