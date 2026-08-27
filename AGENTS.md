@@ -15,14 +15,20 @@ cargo build                                # release: cargo build --release
 docker buildx build --platform linux/amd64 --target static-binary --output type=local,dest=/tmp/clavenar-lite-static .
 cargo test
 ./scripts/smoke-e2e.sh                     # CI e2e (needs docker): boots the runtime image — all three verdicts + park-poll-decide loop + concurrent audit read
-./scripts/smoke-native-install.sh VERSION ASSET_DIRECTORY  # both static architectures + native lifecycle + embedded-policy boot
+./scripts/smoke-native-install.sh VERSION ASSET_DIRECTORY [INSTALLER_DIRECTORY]  # prebuilt release assets required
 cargo clippy --all-targets -- -D warnings
 cargo deny check all                       # supply-chain gate
 cargo cyclonedx --format json --describe crate   # SBOM
+shellcheck -S warning scripts/*.sh
 docker build -t clavenar-lite:dev .
 ```
 
 Host-build caveat: `target/` may be root-owned from prior docker builds — pass `CARGO_TARGET_DIR=/tmp/clavenar-lite-target`. The protected publication workflow ships multi-arch amd64+arm64 only when the signed request version matches `Cargo.toml` and its source SHA matches the checked-out commit.
+
+The native-install smoke is a release-artifact check, not an ordinary source
+test: the asset directory must already contain both architecture archives and
+checksums. The optional installer directory selects the matching staged
+`install.sh`/`uninstall.sh`; when omitted, the repository scripts are used.
 
 Run: single bin `clavenar-lite` (`clavenar-lite start …`); HTTP server binds `0.0.0.0:8088` (`--bind` / `CLAVENAR_LITE_BIND`, `--port` / `CLAVENAR_LITE_PORT`). Native service installs select loopback. Subcommands: `start`, `verify`, `audit <agent_id>`, `backup`, `restore`, `graduate {report,verify}`, `pending {list,get,decide}`. Every flag has a `CLAVENAR_LITE_*` env fallback (see README matrix). The protected distribution event must match the Cargo version and exact signed-BOM source SHA before the workflow publishes a versioned image or static binary.
 
@@ -91,4 +97,6 @@ Rust house rules: clippy `-D warnings` is mandatory — fix the code, never `#[a
 Commit subjects must start with a lowercase letter.
 
 ## Pointers
-README.md · SECURITY.md · docs/SEQUENCES.md
+
+[README](README.md) · [security policy](SECURITY.md) ·
+[sequence diagrams](docs/SEQUENCES.md).
